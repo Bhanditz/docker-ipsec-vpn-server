@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Docker script for starting an IPsec/L2TP VPN server
 #
