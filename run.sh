@@ -159,6 +159,8 @@ cat <<EOF
 
 ================================================
 
+IPsec VPN server is now ready for use!
+
 Connect to your new VPN with these details:
 
 Server IP: $PUBLIC_IP
@@ -184,10 +186,10 @@ cat > /etc/ppp/chap-secrets <<EOF
 EOF
 echo -n "" > /etc/ipsec.d/passwd
 # Insert VPN users
-IFS=","; USER_ARR=($(trim $VPN_USERS))
+IFS=","; USER_ARR=($(trim "$VPN_USERS"))
 # List is empty, insert default user
 if [[ "${#USER_ARR[@]}" = "0" ]]; then
-    # Use to VPN_USER/VPN_PASSWORD
+    # Use VPN_USER/VPN_PASSWORD
     # Fallback to 'vpnuser'/generated
     USER_ARR[0]="${VPN_USER:-vpnuser}:${VPN_PASSWORD}"
 fi
@@ -202,15 +204,19 @@ for i in "${!USER_ARR[@]}"; do
         PASS=$(rand)
     fi
     #Add to chap-secrets
-    echo "\"$USER\" l2tpd \"$PASS\"" >> /etc/ppp/chap-secrets
+    SRC_IP="*"
+    echo "\"$USER\" l2tpd \"$PASS\" $SRC_IP" >> /etc/ppp/chap-secrets
     #Add to xauth-secrets
     PASS_ENC=$(openssl passwd -1 "$PASS")
     echo "${USER}:${PASS_ENC}:xauth-psk" >> /etc/ipsec.d/passwd
     #Show credentials
-    echo "[User $(($i+1))] Username: '$USER' Password: '$PASS'"
+    echo "[User $(($i+1))]"
+    echo "  Username: $USER"
+    echo "  Password: $PASS"
 done
 
 cat <<EOF
+
 Write these down. You'll need them to connect!
 
 Setup VPN Clients: https://git.io/vpnclients
@@ -281,16 +287,6 @@ modprobe af_key
 # Start services
 mkdir -p /var/run/pluto /var/run/xl2tpd
 rm -f /var/run/pluto/pluto.pid /var/run/xl2tpd.pid
-
-cat <<EOF
-
-================================================
-
-IPsec VPN server is now ready for use!
-
-================================================
-
-EOF
 
 /usr/local/sbin/ipsec start --config /etc/ipsec.conf
 exec /usr/sbin/xl2tpd -D -c /etc/xl2tpd/xl2tpd.conf
