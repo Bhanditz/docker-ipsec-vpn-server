@@ -1,7 +1,13 @@
+:warning: This is a multi-user fork of https://github.com/hwdsl2/docker-ipsec-vpn-server
+
+Main difference is `VPN_USER` becomes `VPN_USERS`, see more below. If no `VPN_USERS` are provided, it will fallback to `VPN_USER`/`VPN_PASSWORD`.
+
+---
+
 # IPsec VPN Server on Docker
 
-[![Build Status](https://img.shields.io/travis/hwdsl2/docker-ipsec-vpn-server.svg)](https://travis-ci.org/hwdsl2/docker-ipsec-vpn-server) 
-[![Docker Stars](https://img.shields.io/docker/stars/hwdsl2/ipsec-vpn-server.svg)](https://hub.docker.com/r/hwdsl2/ipsec-vpn-server) 
+[![Build Status](https://img.shields.io/travis/hwdsl2/docker-ipsec-vpn-server.svg)](https://travis-ci.org/hwdsl2/docker-ipsec-vpn-server)
+[![Docker Stars](https://img.shields.io/docker/stars/hwdsl2/ipsec-vpn-server.svg)](https://hub.docker.com/r/hwdsl2/ipsec-vpn-server)
 [![Docker Pulls](https://img.shields.io/docker/pulls/hwdsl2/ipsec-vpn-server.svg)](https://hub.docker.com/r/hwdsl2/ipsec-vpn-server)
 
 Docker image to run an IPsec VPN server, with support for both `IPsec/L2TP` and `IPsec/XAuth ("Cisco IPsec")`.
@@ -17,7 +23,7 @@ Follow [these instructions](https://docs.docker.com/engine/installation/) to get
 Get the trusted build from the Docker Hub registry:
 
 ```
-docker pull hwdsl2/ipsec-vpn-server
+docker pull jpillora/ipsec-vpn-server
 ```
 
 or download and compile the source yourself from GitHub:
@@ -25,7 +31,7 @@ or download and compile the source yourself from GitHub:
 ```
 git clone https://github.com/hwdsl2/docker-ipsec-vpn-server.git
 cd docker-ipsec-vpn-server
-docker build -t hwdsl2/ipsec-vpn-server .
+docker build -t jpillora/ipsec-vpn-server .
 ```
 
 ## How to use this image
@@ -36,11 +42,12 @@ This Docker image uses the following three environment variables, that can be de
 
 ```
 VPN_IPSEC_PSK=<IPsec pre-shared key>
-VPN_USER=<VPN Username>
-VPN_PASSWORD=<VPN Password>
+VPN_USERS=<VPN User>,<VPN User>,<VPN User>,...
 ```
 
-This will create a single user account for VPN login. The IPsec PSK (pre-shared key) is specified by the `VPN_IPSEC_PSK` environment variable. The VPN username is defined in `VPN_USER`, and VPN password is specified by `VPN_PASSWORD`.
+Where `<VPN User>` is `<USERNAME:PASSWORD>`. If `PASSWORD` is omitted, it will be randomly generated.
+
+This will create a single user account for VPN login. The IPsec PSK (pre-shared key) is specified by the `VPN_IPSEC_PSK` environment variable.
 
 **Note:** In your `env` file, DO NOT put single or double quotes around values, or add space around `=`. Also, DO NOT use these characters within values: `\ " '`
 
@@ -64,12 +71,12 @@ docker run \
     -p 4500:4500/udp \
     -v /lib/modules:/lib/modules:ro \
     -d --privileged \
-    hwdsl2/ipsec-vpn-server
+    jpillora/ipsec-vpn-server
 ```
 
 ### Retrieve VPN login details
 
-If you did not set environment variables via an `env` file, `VPN_USER` will default to `vpnuser` and both `VPN_IPSEC_PSK` and `VPN_PASSWORD` will be randomly generated. To retrieve them, show the logs of the running container:
+If you did not set environment variables via an `env` file, `VPN_USERS` will default to `vpnuser` and both `VPN_IPSEC_PSK` will be randomly generated. To retrieve them, show the logs of the running container:
 
 ```
 docker logs ipsec-vpn-server

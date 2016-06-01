@@ -14,10 +14,17 @@
 # Attribution required: please include my name in any derivative and let me
 # know how you have improved it!
 
-# IPsec Pre-Shared Key, VPN Username and Password
+# IPsec Pre-Shared Key, VPN User List
 VPN_IPSEC_PSK=$VPN_IPSEC_PSK
-VPN_USER=$VPN_USER
-VPN_PASSWORD=$VPN_PASSWORD
+VPN_USERS=$VPN_USERS
+
+function rand {
+    cat /dev/urandom | env LC_CTYPE=C tr -dc a-zA-Z0-9 | head -c 24
+}
+
+function trim {
+    echo "$1" | xargs
+}
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
@@ -28,17 +35,6 @@ fi
 
 if [ ! -f /sys/class/net/eth0/operstate ]; then
   echo "Network interface 'eth0' is not available. Aborting."
-  exit 1
-fi
-
-if [ -z "$VPN_IPSEC_PSK" ] && [ -z "$VPN_USER" ] && [ -z "$VPN_PASSWORD" ]; then
-  VPN_IPSEC_PSK="$(< /dev/urandom tr -dc 'A-HJ-NPR-Za-km-z2-9' | head -c 16)"
-  VPN_USER=vpnuser
-  VPN_PASSWORD="$(< /dev/urandom tr -dc 'A-HJ-NPR-Za-km-z2-9' | head -c 16)"
-fi
-
-if [ -z "$VPN_IPSEC_PSK" ] || [ -z "$VPN_USER" ] || [ -z "$VPN_PASSWORD" ]; then
-  echo "VPN credentials cannot be empty. Edit your 'env' file and re-enter them."
   exit 1
 fi
 
@@ -123,11 +119,6 @@ conn xauth-psk
   also=shared
 EOF
 
-# Specify IPsec PSK
-cat > /etc/ipsec.secrets <<EOF
-$PUBLIC_IP  %any  : PSK "$VPN_IPSEC_PSK"
-EOF
-
 # Create xl2tpd config
 cat > /etc/xl2tpd/xl2tpd.conf <<EOF
 [global]
@@ -162,15 +153,71 @@ lcp-echo-interval 60
 connect-delay 5000
 EOF
 
-# Create VPN credentials
+
+# Show message
+cat <<EOF
+
+================================================
+
+Connect to your new VPN with these details:
+
+Server IP: $PUBLIC_IP
+EOF
+
+# Generate default shared secret
+if [ -z "$VPN_IPSEC_PSK" ]; then
+    VPN_IPSEC_PSK=$(rand)
+fi
+
+# Show shared secret
+echo "IPsec PSK: $VPN_IPSEC_PSK"
+
+# Specify IPsec PSK
+cat > /etc/ipsec.secrets <<EOF
+$PUBLIC_IP  %any  : PSK "$VPN_IPSEC_PSK"
+EOF
+
+# Prepare VPN user files
 cat > /etc/ppp/chap-secrets <<EOF
 # Secrets for authentication using CHAP
 # client  server  secret  IP addresses
-"$VPN_USER" l2tpd "$VPN_PASSWORD" *
 EOF
+echo -n "" > /etc/ipsec.d/passwd
+# Insert VPN users
+IFS=","; USER_ARR=($(trim $VPN_USERS))
+# List is empty, insert default user
+if [[ "${#USER_ARR[@]}" = "0" ]]; then
+    # Use to VPN_USER/VPN_PASSWORD
+    # Fallback to 'vpnuser'/generated
+    USER_ARR[0]="${VPN_USER:-vpnuser}:${VPN_PASSWORD}"
+fi
+# Loop through each
+for i in "${!USER_ARR[@]}"; do
+    PAIR=${USER_ARR[$i]}
+    IFS=":"; USERPASS=($PAIR)
+    USER=$(trim ${USERPASS[0]})
+    PASS=$(trim ${USERPASS[1]})
+    #If not provided, generate random password
+    if [[ "$PASS" = "" ]]; then
+        PASS=$(rand)
+    fi
+    #Add to chap-secrets
+    echo "\"$USER\" l2tpd \"$PASS\"" >> /etc/ppp/chap-secrets
+    #Add to xauth-secrets
+    PASS_ENC=$(openssl passwd -1 "$PASS")
+    echo "${USER}:${PASS_ENC}:xauth-psk" >> /etc/ipsec.d/passwd
+    #Show credentials
+    echo "[User $(($i+1))] Username: '$USER' Password: '$PASS'"
+done
 
-VPN_PASSWORD_ENC=$(openssl passwd -1 "$VPN_PASSWORD")
-echo "${VPN_USER}:${VPN_PASSWORD_ENC}:xauth-psk" > /etc/ipsec.d/passwd
+cat <<EOF
+Write these down. You'll need them to connect!
+
+Setup VPN Clients: https://git.io/vpnclients
+
+================================================
+
+EOF
 
 # Update sysctl settings
 if ! grep -qs "hwdsl2 VPN script" /etc/sysctl.conf; then
@@ -228,33 +275,22 @@ sysctl -q -p 2>/dev/null
 # Update file attributes
 chmod 600 /etc/ipsec.secrets /etc/ppp/chap-secrets /etc/ipsec.d/passwd
 
-cat <<EOF
-
-================================================
-
-IPsec VPN server is now ready for use!
-
-Connect to your new VPN with these details:
-
-Server IP: $PUBLIC_IP
-IPsec PSK: $VPN_IPSEC_PSK
-Username: $VPN_USER
-Password: $VPN_PASSWORD
-
-Write these down. You'll need them to connect!
-
-Setup VPN Clients: https://git.io/vpnclients
-
-================================================
-
-EOF
-
 # Load IPsec NETKEY kernel module
 modprobe af_key
 
 # Start services
 mkdir -p /var/run/pluto /var/run/xl2tpd
 rm -f /var/run/pluto/pluto.pid /var/run/xl2tpd.pid
+
+cat <<EOF
+
+================================================
+
+IPsec VPN server is now ready for use!
+
+================================================
+
+EOF
 
 /usr/local/sbin/ipsec start --config /etc/ipsec.conf
 exec /usr/sbin/xl2tpd -D -c /etc/xl2tpd/xl2tpd.conf
