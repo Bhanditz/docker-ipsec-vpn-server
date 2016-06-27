@@ -17,6 +17,10 @@
 # IPsec Pre-Shared Key, VPN User List
 VPN_IPSEC_PSK=$VPN_IPSEC_PSK
 VPN_USERS=$VPN_USERS
+VPN_USERS=$VPN_USERS
+VPN_DNS=${VPN_DNS:-"8.8.8.8,8.8.4.4"}
+VPN_L2TP_SUBNET=${VPN_L2TP_SUBNET:-"192.168.42"}
+VPN_XAUTH_SUBNET=${VPN_XAUTH_SUBNET:-"192.168.43"}
 
 function rand {
     cat /dev/urandom | env LC_CTYPE=C tr -dc a-zA-Z0-9 | head -c 24
@@ -69,7 +73,7 @@ cat > /etc/ipsec.conf <<EOF
 version 2.0
 
 config setup
-  virtual_private=%v4:10.0.0.0/8,%v4:192.168.0.0/16,%v4:172.16.0.0/12,%v4:!192.168.42.0/23
+  virtual_private=%v4:10.0.0.0/8,%v4:192.168.0.0/16,%v4:172.16.0.0/12,%v4:!$VPN_L2TP_SUBNET.0/23
   protostack=netkey
   nhelpers=0
   interfaces=%defaultroute
@@ -104,7 +108,7 @@ conn l2tp-psk
 conn xauth-psk
   auto=add
   leftsubnet=0.0.0.0/0
-  rightaddresspool=192.168.43.10-192.168.43.250
+  rightaddresspool=$VPN_XAUTH_SUBNET.10-$VPN_XAUTH_SUBNET.250
   modecfgdns1=8.8.8.8
   modecfgdns2=8.8.4.4
   leftxauthserver=yes
@@ -125,8 +129,8 @@ cat > /etc/xl2tpd/xl2tpd.conf <<EOF
 port = 1701
 
 [lns default]
-ip range = 192.168.42.10-192.168.42.250
-local ip = 192.168.42.1
+ip range = $VPN_L2TP_SUBNET.10-$VPN_L2TP_SUBNET.250
+local ip = $VPN_L2TP_SUBNET.1
 require chap = yes
 refuse pap = yes
 require authentication = yes
@@ -139,8 +143,6 @@ EOF
 cat > /etc/ppp/options.xl2tpd <<EOF
 ipcp-accept-local
 ipcp-accept-remote
-ms-dns 8.8.8.8
-ms-dns 8.8.4.4
 noccp
 auth
 crtscts
@@ -153,7 +155,6 @@ lcp-echo-interval 60
 connect-delay 5000
 EOF
 
-
 # Show message
 cat <<EOF
 
@@ -165,6 +166,15 @@ Connect to your new VPN with these details:
 
 Server IP: $PUBLIC_IP
 EOF
+
+# Insert VPN DNS entries
+IFS=","; DNS_ARR=($(trim "$VPN_DNS"))
+# Loop through each
+for i in "${!DNS_ARR[@]}"; do
+    DNS="${DNS_ARR[$i]}"
+    echo "DNS #$(($i+1)): $DNS"
+    echo "ms-dns $DNS" >> /etc/ppp/options.xl2tpd
+done
 
 # Generate default shared secret
 if [ -z "$VPN_IPSEC_PSK" ]; then
@@ -266,14 +276,14 @@ iptables -I INPUT 3 -p udp --dport 1701 -j DROP
 iptables -I FORWARD 1 -m conntrack --ctstate INVALID -j DROP
 iptables -I FORWARD 2 -i eth+ -o ppp+ -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 iptables -I FORWARD 3 -i ppp+ -o eth+ -j ACCEPT
-iptables -I FORWARD 4 -i eth+ -d 192.168.43.0/24 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-iptables -I FORWARD 5 -s 192.168.43.0/24 -o eth+ -j ACCEPT
+iptables -I FORWARD 4 -i eth+ -d $VPN_XAUTH_SUBNET.0/24 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -I FORWARD 5 -s $VPN_XAUTH_SUBNET.0/24 -o eth+ -j ACCEPT
 # To allow traffic between VPN clients themselves, uncomment these lines:
-# iptables -I FORWARD 6 -i ppp+ -o ppp+ -s 192.168.42.0/24 -d 192.168.42.0/24 -j ACCEPT
-# iptables -I FORWARD 7 -s 192.168.43.0/24 -d 192.168.43.0/24 -j ACCEPT
+iptables -I FORWARD 6 -i ppp+ -o ppp+ -s $VPN_L2TP_SUBNET.0/24 -d $VPN_L2TP_SUBNET.0/24 -j ACCEPT
+iptables -I FORWARD 7 -s $VPN_XAUTH_SUBNET.0/24 -d $VPN_XAUTH_SUBNET.0/24 -j ACCEPT
 iptables -A FORWARD -j DROP
-iptables -t nat -I POSTROUTING -s 192.168.43.0/24 -o eth+ -m policy --dir out --pol none -j SNAT --to-source "$PRIVATE_IP"
-iptables -t nat -I POSTROUTING -s 192.168.42.0/24 -o eth+ -j SNAT --to-source "$PRIVATE_IP"
+iptables -t nat -I POSTROUTING -s $VPN_XAUTH_SUBNET.0/24 -o eth+ -m policy --dir out --pol none -j SNAT --to-source "$PRIVATE_IP"
+iptables -t nat -I POSTROUTING -s $VPN_L2TP_SUBNET.0/24 -o eth+ -j SNAT --to-source "$PRIVATE_IP"
 
 # Reload sysctl.conf
 sysctl -q -p 2>/dev/null
