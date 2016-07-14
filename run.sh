@@ -109,8 +109,6 @@ conn xauth-psk
   auto=add
   leftsubnet=0.0.0.0/0
   rightaddresspool=$VPN_XAUTH_SUBNET.10-$VPN_XAUTH_SUBNET.250
-  modecfgdns1=8.8.8.8
-  modecfgdns2=8.8.4.4
   leftxauthserver=yes
   rightxauthclient=yes
   leftmodecfgserver=yes
@@ -172,8 +170,9 @@ IFS=","; DNS_ARR=($(trim "$VPN_DNS"))
 # Loop through each
 for i in "${!DNS_ARR[@]}"; do
     DNS="${DNS_ARR[$i]}"
-    echo "DNS #$(($i+1)): $DNS"
     echo "ms-dns $DNS" >> /etc/ppp/options.xl2tpd
+    echo "  modecfgdns$(($i+1))=$DNS" >> /etc/ipsec.conf
+    echo "DNS #$(($i+1)): $DNS"
 done
 
 # Generate default shared secret
